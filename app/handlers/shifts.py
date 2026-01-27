@@ -6,10 +6,10 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from app.config import WEB_APP_URL, DB_PATH, TZ
-from app.data import get_tasks  
 from app.database.repo import users as user_repo
 from app.database.repo import shifts as shift_repo
 from app.database.repo import tasks as task_repo
+from app.database.repo import checklists as check_repo
 
 from app.services import shift as shift_service
 from app.keyboards import reply, builders
@@ -109,7 +109,7 @@ async def open_live_checklist(message: Message):
     except json.JSONDecodeError: 
         completed = []
 
-    tasks_list = get_tasks(active['role'], active['shift_type'])
+    tasks_list = await check_repo.get_checklist(active['role'], active['shift_type'])
 
     await message.answer(
         "⚡️ <b>Ваш Чек-лист:</b>", 
@@ -130,7 +130,7 @@ async def toggle_task_handler(callback: CallbackQuery):
     if not active or active['id'] != btn_shift_id:
         return await callback.answer("Эта смена уже закрыта!", show_alert=True)
 
-    tasks_list = get_tasks(active['role'], active['shift_type'])
+    tasks_list = await check_repo.get_checklist(active['role'], active['shift_type'])
 
     is_on = (action == "check_on")
     
@@ -165,7 +165,7 @@ async def submit_checklist(callback: CallbackQuery):
     except json.JSONDecodeError: 
         done_titles = []
 
-    tasks_list = get_tasks(active['role'], active['shift_type'])
+    tasks_list = await check_repo.get_checklist(active['role'], active['shift_type'])
 
     total = len(tasks_list)
     completed_count = 0
@@ -230,7 +230,7 @@ async def end_shift_with_video(message: Message, state: FSMContext):
     
     user_info = await user_repo.get_user(tg_id)
     
-    tasks_list = get_tasks(active['role'], active['shift_type'])
+    tasks_list = await check_repo.get_checklist(active['role'], active['shift_type'])
     
     result = await shift_service.close_shift_logic(
         tg_id, 

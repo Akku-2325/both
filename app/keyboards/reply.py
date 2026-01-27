@@ -1,4 +1,25 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+def admin_main():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👀 Мониторинг")],
+            [KeyboardButton(text="👥 Сотрудники"), KeyboardButton(text="🔗 Приглашения")],
+            [KeyboardButton(text="📝 Задания"), KeyboardButton(text="📋 История заданий")], # Вернул историю
+            [KeyboardButton(text="⚙️ Чек-листы"), KeyboardButton(text="🎭 Роли")], # Добавил Роли
+            [KeyboardButton(text="🔔 Напоминания"), KeyboardButton(text="🚪 Выйти")]
+        ],
+        resize_keyboard=True
+    )
+
+def admin_roles_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ Добавить роль"), KeyboardButton(text="❌ Удалить роль")],
+            [KeyboardButton(text="🔙 В Главное меню")]
+        ],
+        resize_keyboard=True
+    )
 
 def guest():
     return ReplyKeyboardMarkup(
@@ -28,20 +49,6 @@ def menu_shift_open(web_app_url: str):
             [KeyboardButton(text="⚡️ Онлайн Чек-лист")], 
             [KeyboardButton(text="🔴 Закончить смену")],
             [KeyboardButton(text="📜 История смен"), KeyboardButton(text="💰 Мой баланс")],
-            # [KeyboardButton(text="📋 Открыть WebApp", web_app=WebAppInfo(url=web_app_url))],
-        ],
-        resize_keyboard=True
-    )
-
-def admin_main():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="👀 Мониторинг")], 
-            [KeyboardButton(text="👥 Список сотрудников")],
-            [KeyboardButton(text="📝 Дать задание"), KeyboardButton(text="🗑 Отменить задание")],
-            [KeyboardButton(text="📋 История заданий")],
-            [KeyboardButton(text="➕ Добавить сотрудника"), KeyboardButton(text="🗑 Удалить сотрудника")],
-            [KeyboardButton(text="🚪 Выйти из админки")]
         ],
         resize_keyboard=True
     )
@@ -52,17 +59,6 @@ def cancel():
         resize_keyboard=True
     )
 
-def roles():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="barista"), KeyboardButton(text="cashier")],
-            [KeyboardButton(text="cook"), KeyboardButton(text="admin")],
-            [KeyboardButton(text="❌ Отмена")]
-        ],
-        resize_keyboard=True
-    )
-
-# 👇 ДОБАВЛЯЕМ ЭТУ ФУНКЦИЮ
 def shift_type_kb():
     return ReplyKeyboardMarkup(
         keyboard=[

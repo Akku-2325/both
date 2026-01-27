@@ -3,29 +3,31 @@ from datetime import datetime
 from aiogram import Bot
 from app.config import DB_PATH, TZ
 from app.database.repo import shifts as shift_repo
+from app.database.repo import checklists as check_repo
 
 async def send_hourly_reminders(bot: Bot):
     shifts = await shift_repo.get_all_active_shifts_data()
     if not shifts: return
-
-    text_template = (
-        "⏳ Вы на смене уже <b>{hours} ч.</b>\n\n"
-        "🔔 <b>Чек-поинт чистоты:</b>\n"
-        "▫️ Протрите столы\n"
-        "▫️ Проверьте салфетки\n"
-        "▫️ Улыбнитесь! 🙂"
-    )
+    
+    reminders = await check_repo.get_reminders_for_scheduler()
 
     for shift in shifts:
         tg_id = shift['user_id']
+        role = shift['role']
+        
         try:
             start_time = datetime.strptime(shift['started_at'], "%Y-%m-%d %H:%M:%S")
             if start_time.tzinfo is None:
                 start_time = TZ.localize(start_time)
+            
             duration = datetime.now(TZ) - start_time
             hours_working = int(duration.total_seconds() // 3600)
-            await bot.send_message(tg_id, text_template.format(hours=hours_working))
-        except: pass
+            
+            for r in reminders:
+                if r['role'] == role and r['interval_hours'] == hours_working:
+                     await bot.send_message(tg_id, f"🔔 <b>НАПОМИНАНИЕ:</b>\n\n{r['text']}")
+        except Exception: 
+            pass
 
 async def clean_expired_tasks(bot: Bot):
     now_str = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
