@@ -1,6 +1,6 @@
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
@@ -30,13 +30,20 @@ async def get_dashboard_data():
     builder.adjust(1)
     return text, builder.as_markup()
 
+@router.callback_query(F.data.startswith("root_"), ~StateFilter(RootState))
+async def security_check(callback: CallbackQuery):
+    await callback.answer("🔒 Сессия закрыта. Войдите заново.", show_alert=True)
+    try: await callback.message.edit_text("🔒 <b>Сессия завершена.</b>\nПанель отключена.", reply_markup=None)
+    except: pass
 
 @router.message(Command("root_login"))
-async def root_login_cmd(message: Message):
+async def root_login_cmd(message: Message, state: FSMContext):
     parts = message.text.split()
     if len(parts) < 2 or parts[1] != SUPER_ADMIN_PASSWORD: return
     try: await message.delete()
     except: pass
+    
+    await state.set_state(RootState.active)
     
     await message.answer("🔑 <b>Master-доступ активирован.</b>", reply_markup=reply.super_admin_panel())
     
@@ -44,7 +51,11 @@ async def root_login_cmd(message: Message):
     await message.answer(text, reply_markup=kb)
 
 @router.message(F.text == "👑 Панель Владельца")
-async def root_panel_btn(message: Message):
+async def root_panel_btn(message: Message, state: FSMContext):
+    current_state = await state.get_state()
+    if not current_state:
+        return await message.answer("🔒 Сначала войдите через /root_login")
+
     text, kb = await get_dashboard_data()
     await message.answer(text, reply_markup=kb)
 
@@ -75,7 +86,7 @@ async def root_gen_ask_tag(callback: CallbackQuery, state: FSMContext):
 @router.message(RootState.waiting_target_id)
 async def root_gen_finish(message: Message, state: FSMContext, bot: Bot):
     if message.text == "❌ Отмена":
-        await state.clear()
+        await state.set_state(RootState.active)
         await message.answer("Создание лицензии отменено.", reply_markup=reply.super_admin_panel())
         dash_text, dash_kb = await get_dashboard_data()
         return await message.answer(dash_text, reply_markup=dash_kb)
@@ -83,7 +94,8 @@ async def root_gen_finish(message: Message, state: FSMContext, bot: Bot):
     tag = None if message.text == "⏩ Пропустить (Для любого)" else message.text.lstrip("@").strip()
     key = await saas_repo.create_license_key(message.from_user.id, tag)
     info = await bot.get_me()
-    await state.clear()
+    
+    await state.set_state(RootState.active)
     
     text = f"✨ <b>Magic Link готова!</b>\n\n🔗 <code>https://t.me/{info.username}?start={key}</code>\n\n"
     if tag: text += f"🔒 <b>Для:</b> @{tag}"
@@ -104,7 +116,7 @@ async def root_broadcast_start(callback: CallbackQuery, state: FSMContext):
 @router.message(RootState.waiting_broadcast_text)
 async def root_broadcast_finish(message: Message, state: FSMContext, bot: Bot):
     if message.text == "❌ Отмена":
-        await state.clear()
+        await state.set_state(RootState.active)
         await message.answer("Отмена.", reply_markup=reply.super_admin_panel())
         dash_text, dash_kb = await get_dashboard_data()
         return await message.answer(dash_text, reply_markup=dash_kb)
@@ -117,7 +129,7 @@ async def root_broadcast_finish(message: Message, state: FSMContext, bot: Bot):
             count += 1
         except: pass
         
-    await state.clear()
+    await state.set_state(RootState.active)
     await message.answer(f"✅ Рассылка завершена. Доставлено: {count}", reply_markup=reply.super_admin_panel())
     dash_text, dash_kb = await get_dashboard_data()
     await message.answer(dash_text, reply_markup=dash_kb)
@@ -193,5 +205,6 @@ async def delete_cafe_confirm(callback: CallbackQuery, bot: Bot):
     await list_cafes_handler(callback)
 
 @router.message(F.text == "🚪 Выйти из системы")
-async def root_logout(message: Message):
+async def root_logout(message: Message, state: FSMContext):
+    await state.clear()
     await message.answer("🔒 Мастер-сессия закрыта.", reply_markup=reply.guest())
