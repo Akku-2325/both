@@ -1,41 +1,56 @@
 from aiogram import Router, F
-from aiogram.filters import Command, StateFilter, CommandStart, CommandObject
-from aiogram.types import Message
+from aiogram.filters import StateFilter, CommandStart, CommandObject, Command
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-
-from app.config import WEB_APP_URL, ADMIN_PIN  
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.core.config import WEB_APP_URL
 from app.database.repo import users as user_repo
-from app.database.repo import shifts as shift_repo
 from app.database.repo import checklists as check_repo
-
+from app.database.repo import roles as role_repo
+from app.database.repo import shifts as shift_repo 
 from app.services import auth as auth_service
 from app.keyboards import reply
-
-class RegState(StatesGroup):
-    name = State()
-    pin = State()
+from app.states.states import RegState, LoginState
 
 router = Router()
 
-@router.message(CommandStart(deep_link=True))
-async def start_invite(message: Message, command: CommandObject, state: FSMContext):
+@router.message(CommandStart(deep_link=True), StateFilter("*"))
+async def start_employee_invite(message: Message, command: CommandObject, state: FSMContext):
     invite_code = command.args
-    invite_data = await check_repo.check_invite(invite_code)
-    
-    if not invite_data:
-        return await message.answer("⛔ Ссылка недействительна или устарела.")
-    
-    existing = await user_repo.get_user(message.from_user.id)
-    if existing and existing['is_active']:
-         return await message.answer("Вы уже зарегистрированы!")
+    await state.clear() 
 
-    await state.update_data(role=invite_data['role'], code=invite_code)
+    invite_data = await check_repo.check_invite(invite_code)
+    if not invite_data:
+        return await message.answer("⛔ Ссылка приглашения недействительна или устарела.")
+    
+    target_r_id = invite_data['restaurant_id']
+    existing = await user_repo.get_user(message.from_user.id, target_r_id)
+    if existing and existing['is_active']:
+         return await message.answer("Вы уже зарегистрированы в этом заведении! Нажмите 'Войти'.", reply_markup=reply.guest())
+
+    role_info = await role_repo.get_role(target_r_id, invite_data['role'])
+    role_name = role_info['name'] if role_info else invite_data['role']
+
+    await state.update_data(role=invite_data['role'], code=invite_code, target_restaurant_id=target_r_id)
     await state.set_state(RegState.name)
-    await message.answer(
-        f"👋 Добро пожаловать!\nВы регистрируетесь как: <b>{invite_data['role']}</b>\n\n"
-        f"1️⃣ Введите ваше <b>Имя и Фамилию</b>:"
-    )
+    await message.answer(f"👋 Вас пригласили в команду!\nДолжность: <b>{role_name}</b>\n\n1️⃣ Введите ваше <b>Имя и Фамилию</b>:")
+
+@router.message(Command("start"), StateFilter("*"))
+async def start_default(message: Message, state: FSMContext):
+    await state.clear()
+    
+    shops = await user_repo.get_user_restaurants(message.from_user.id)
+    
+    if not shops:
+        await message.answer(
+            "👋 Добро пожаловать!\n\n"
+            "• Если вы владелец: используйте <b>Magic Link</b> для создания кофейни.\n"
+            "• Если вы сотрудник: попросите <b>ссылку-приглашение</b> у менеджера.", 
+            reply_markup=reply.guest()
+        )
+    else:
+        await message.answer("👋 С возвращением! Выберите действие:", reply_markup=reply.guest())
+
 
 @router.message(RegState.name)
 async def reg_name(message: Message, state: FSMContext):
@@ -47,71 +62,74 @@ async def reg_name(message: Message, state: FSMContext):
 async def reg_pin(message: Message, state: FSMContext):
     if not message.text.isdigit() or len(message.text) != 4:
         return await message.answer("❌ PIN должен состоять из 4 цифр.")
-    
     data = await state.get_data()
-    await user_repo.add_user(message.from_user.id, data['name'], data['role'], message.text)
+    await user_repo.add_user(message.from_user.id, data['target_restaurant_id'], data['name'], data['role'], message.text)
     await check_repo.mark_invite_used(data['code'])
-    
     await state.clear()
-    await message.answer(
-        f"✅ Регистрация завершена, {data['name']}!\nТеперь нажмите <b>🔐 Войти</b>.", 
-        reply_markup=reply.guest()
-    )
+    await message.answer(f"✅ Регистрация завершена! Нажмите <b>🔐 Войти</b>.", reply_markup=reply.guest())
 
-@router.message(Command("start"))
-async def start_cmd(message: Message, state: FSMContext): 
-    await state.clear() 
-    role = await user_repo.get_session_role(message.from_user.id)
-    
-    if role == "admin":
-        await message.answer("🕴 Вы <b>Администратор</b>.", reply_markup=reply.admin_main())
-    elif role:
-        user = await user_repo.get_user(message.from_user.id)
-        name = user['full_name'] if user else role
-        await message.answer(f"👋 Привет, <b>{name}</b>.", reply_markup=reply.menu_shift_closed())
-    else:
-        await message.answer("👋 Добро пожаловать! Если у вас есть ссылка-приглашение, перейдите по ней.", reply_markup=reply.guest())
-
-@router.message(Command("admin_login"))
-async def admin_login_cmd(message: Message):
-    if not message.text: return
-    parts = message.text.split()
-    if len(parts) < 2 or parts[1] != ADMIN_PIN:
-        return await message.answer("❌ Неверный пароль.")
-    
-    await user_repo.create_session(message.from_user.id, "admin")
-    await user_repo.add_user(message.from_user.id, "Главный Админ", "admin", "0000")
-    
-    await message.answer("🕴 <b>Панель управления.</b>", reply_markup=reply.admin_main())
 
 @router.message(F.text == "🔐 Войти")
 async def login_start(message: Message, state: FSMContext):
-    await state.set_state("login_pin")
-    await message.answer("🔢 Введите PIN-код:", reply_markup=reply.login_cancel())
+    shops = await user_repo.get_user_restaurants(message.from_user.id)
+    if not shops: return await message.answer("⚠️ Вы не зарегистрированы нигде.")
+    
+    if len(shops) == 1:
+        shop = shops[0]
+        await state.update_data(target_restaurant_id=shop['id'])
+        await state.set_state(LoginState.waiting_pin)
+        return await message.answer(f"🏢 <b>{shop['title']}</b>\n🔢 Введите PIN-код:", reply_markup=reply.login_cancel())
 
-@router.message(StateFilter("*"), F.text == "❌ Отмена ввода")
-async def cancel_login_global(message: Message, state: FSMContext):
+    builder = InlineKeyboardBuilder()
+    for s in shops: builder.button(text=f"🏢 {s['title']}", callback_data=f"login_select:{s['id']}")
+    builder.adjust(1)
+    await message.answer("<b>Выберите заведение для входа:</b>", reply_markup=builder.as_markup())
+
+@router.callback_query(F.data.startswith("login_select:"))
+async def login_select_shop(callback: CallbackQuery, state: FSMContext):
+    r_id = int(callback.data.split(":")[1])
+    shops = await user_repo.get_user_restaurants(callback.from_user.id)
+    shop = next((s for s in shops if s['id'] == r_id), None)
+    
+    if not shop: return await callback.answer("Ошибка доступа.")
+
+    await state.update_data(target_restaurant_id=r_id)
+    await state.set_state(LoginState.waiting_pin)
+    await callback.message.edit_text(f"🏢 <b>{shop['title']}</b>\n🔢 Введите PIN-код:", reply_markup=None)
+    await callback.message.answer("Введите ПИН или нажмите отмену:", reply_markup=reply.login_cancel())
+    await callback.answer()
+
+@router.message(LoginState.waiting_pin, F.text == "❌ Отмена ввода")
+async def login_cancel_handler(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Вход отменен.", reply_markup=reply.guest())
 
-@router.message(StateFilter("login_pin"))
+@router.message(LoginState.waiting_pin)
 async def login_process(message: Message, state: FSMContext):
-    result = await auth_service.try_login(message.from_user.id, message.text.strip())
+    data = await state.get_data()
+    r_id = data.get('target_restaurant_id')
+    
+    if not r_id:
+        await state.clear()
+        return await message.answer("Ошибка сессии.", reply_markup=reply.guest())
+
+    result = await auth_service.try_login(message.from_user.id, r_id, message.text.strip())
+    
     if result == "disabled":
-        await message.answer("⛔ Аккаунт отключен.", reply_markup=reply.guest())
+        await message.answer("⛔ Доступ заблокирован администратором.", reply_markup=reply.guest())
         await state.clear()
     elif result: 
         await state.clear()
-        if result["role"] == "admin":
-            await message.answer("Панель открыта.", reply_markup=reply.admin_main())
+        if result["role"] == "admin": 
+            await message.answer("🕴 Панель управления открыта.", reply_markup=reply.admin_main())
         else:
-            active_shift = await shift_repo.get_active_shift(result['tg_id'])
+            active_shift = await shift_repo.get_active_shift(message.from_user.id, r_id)
             if active_shift:
-                await message.answer(f"✅ С возвращением, {result['full_name']}! Смена идет.", reply_markup=reply.menu_shift_open(WEB_APP_URL))
+                await message.answer(f"✅ С возвращением, {result['full_name']}!", reply_markup=reply.menu_shift_open(WEB_APP_URL))
             else:
                 await message.answer(f"✅ Привет, {result['full_name']}!", reply_markup=reply.menu_shift_closed())
     else:
-        await message.answer("❌ Неверный PIN. Попробуйте еще раз.")
+        await message.answer("❌ Неверный PIN-код.")
 
 @router.message(F.text.in_({"🚪 Выйти", "🚪 Выйти из админки"}))
 async def logout_cmd(message: Message, state: FSMContext):

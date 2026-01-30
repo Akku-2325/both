@@ -5,9 +5,9 @@ def admin_main():
         keyboard=[
             [KeyboardButton(text="👀 Мониторинг")],
             [KeyboardButton(text="👥 Сотрудники"), KeyboardButton(text="🔗 Приглашения")],
-            [KeyboardButton(text="📝 Задания"), KeyboardButton(text="📋 История заданий")], # Вернул историю
-            [KeyboardButton(text="⚙️ Чек-листы"), KeyboardButton(text="🎭 Роли")], # Добавил Роли
-            [KeyboardButton(text="🔔 Напоминания"), KeyboardButton(text="🚪 Выйти")]
+            [KeyboardButton(text="📝 Задания")],
+            [KeyboardButton(text="⚙️ Чек-листы"), KeyboardButton(text="🎭 Роли")],
+            [KeyboardButton(text="🔔 Напоминания"), KeyboardButton(text="🚪 Выйти из админки")]
         ],
         resize_keyboard=True
     )
@@ -15,8 +15,8 @@ def admin_main():
 def admin_roles_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="➕ Добавить роль"), KeyboardButton(text="❌ Удалить роль")],
-            [KeyboardButton(text="🔙 В Главное меню")]
+            [KeyboardButton(text="➕ Добавить роль"), KeyboardButton(text="📝 Редактировать роль")],
+            [KeyboardButton(text="❌ Удалить роль"), KeyboardButton(text="🔙 В Главное меню")]
         ],
         resize_keyboard=True
     )
@@ -59,12 +59,30 @@ def cancel():
         resize_keyboard=True
     )
 
+def comment_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➡️ Пропустить")],
+            [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True
+    )
+
 def shift_type_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🌅 Утренняя"), KeyboardButton(text="🌇 Вечерняя")],
             [KeyboardButton(text="📅 Полный день")],
             [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True
+    )
+
+def super_admin_panel():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👑 Панель Владельца")],
+            [KeyboardButton(text="🚪 Выйти из системы")]
         ],
         resize_keyboard=True
     )

@@ -1,6 +1,6 @@
 import aiosqlite
 from typing import List, Dict, Any, Optional
-from app.config import DB_PATH
+from app.core.config import DB_PATH
 
 async def _get_db():
     async with aiosqlite.connect(DB_PATH) as db:

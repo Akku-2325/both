@@ -1,8 +1,8 @@
 import json
 from app.database.repo import shifts as shift_repo
 
-async def calculate_kpi(tg_id: int):
-    shifts = await shift_repo.get_monthly_stats(tg_id)
+async def calculate_kpi(tg_id: int, restaurant_id: int):
+    shifts = await shift_repo.get_monthly_stats(tg_id, restaurant_id)
     
     shifts_x = len(shifts)
     total_completed_items = 0 
