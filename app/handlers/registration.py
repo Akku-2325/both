@@ -15,13 +15,11 @@ class OwnerReg(StatesGroup):
     waiting_name = State()
     waiting_pin = State()
 
-# ИСПРАВЛЕНИЕ: Используем lambda для точной проверки наличия ключа в тексте
 @router.message(CommandStart(deep_link=True), lambda msg: "LICENSE-" in msg.text, StateFilter("*"))
 async def start_owner_registration(message: Message, state: FSMContext, command: CommandObject):
     args = command.args
     await state.clear() 
 
-    # Добавляем strip(), чтобы убрать случайные пробелы
     clean_key = args.strip()
     
     key_data = await saas_repo.get_license_key(clean_key)
