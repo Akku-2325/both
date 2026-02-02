@@ -3,8 +3,9 @@ import uuid
 from typing import List, Dict
 from app.core.config import DB_PATH
 
-async def get_checklist(restaurant_id: int, role: str, shift_type: str) -> List[str]:
+async def get_checklist(restaurant_id: int, role: str, shift_type: str) -> List[Dict]:
     async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
         if shift_type == 'full':
             types = ('morning', 'common', 'evening')
         elif shift_type == 'morning':
@@ -17,7 +18,7 @@ async def get_checklist(restaurant_id: int, role: str, shift_type: str) -> List[
         placeholders = ','.join(['?'] * len(types))
         
         query = f"""
-            SELECT text FROM checklist_items 
+            SELECT id, text, item_type FROM checklist_items 
             WHERE restaurant_id = ? AND role = ? AND shift_type IN ({placeholders})
             ORDER BY CASE shift_type 
                 WHEN 'morning' THEN 1 
@@ -29,13 +30,13 @@ async def get_checklist(restaurant_id: int, role: str, shift_type: str) -> List[
 
         async with db.execute(query, params) as cur:
             rows = await cur.fetchall()
-            return [r[0] for r in rows]
+            return [dict(row) for row in rows]
 
-async def add_checklist_item(restaurant_id: int, role: str, shift_type: str, text: str):
+async def add_checklist_item(restaurant_id: int, role: str, shift_type: str, text: str, item_type: str = 'simple'):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT INTO checklist_items (restaurant_id, role, shift_type, text) VALUES (?, ?, ?, ?)", 
-            (restaurant_id, role, shift_type, text)
+            "INSERT INTO checklist_items (restaurant_id, role, shift_type, text, item_type) VALUES (?, ?, ?, ?, ?)", 
+            (restaurant_id, role, shift_type, text, item_type)
         )
         await db.commit()
 

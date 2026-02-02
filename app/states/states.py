@@ -29,7 +29,8 @@ class ShiftState(StatesGroup):
     waiting_for_photo_start = State() 
     waiting_for_photo_end = State()
     waiting_checklist_comment = State() 
-    waiting_end_comment = State()       
+    waiting_end_comment = State()
+    waiting_item_media = State()
 
 class MoneyState(StatesGroup):
     waiting_for_amount = State()
@@ -42,6 +43,7 @@ class RoleState(StatesGroup):
 
 class ChecklistState(StatesGroup):
     waiting_checklist_text = State()
+    waiting_checklist_type = State()
 
 class ReminderState(StatesGroup):
     remind_role = State()

@@ -53,16 +53,25 @@ async def monitor_specific_user(callback: CallbackQuery, restaurant_id: int):
     visual = ""
     completed_count = 0
     
-    for i, task_title in enumerate(tasks):
+    for i, task_data in enumerate(tasks):
+        # ИСПРАВЛЕНИЕ: Теперь мы достаем текст из словаря
+        task_text = task_data['text']
+        item_type = task_data.get('item_type', 'simple')
+        
         is_done = False
         if i < len(user_duties):
             is_done = user_duties[i].get('done', False)
         
+        # Добавляем иконку типа задания для админа
+        type_icon = ""
+        if item_type == 'photo': type_icon = "📸 "
+        elif item_type == 'video': type_icon = "🎥 "
+
         if is_done:
-            visual += f"✅ {task_title}\n"
+            visual += f"✅ {type_icon}{task_text}\n"
             completed_count += 1
         else:
-            visual += f"🟥 {task_title}\n"
+            visual += f"🟥 {type_icon}{task_text}\n"
     
     total = len(tasks)
     perc = int((completed_count / total) * 100) if total > 0 else 0

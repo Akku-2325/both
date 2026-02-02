@@ -1431,15 +1431,19 @@ class OwnerReg(StatesGroup):
     waiting_name = State()
     waiting_pin = State()
 
-@router.message(CommandStart(deep_link=True), F.text.contains("LICENSE-"), StateFilter("*"))
+# ИСПРАВЛЕНИЕ: Используем lambda для точной проверки наличия ключа в тексте
+@router.message(CommandStart(deep_link=True), lambda msg: "LICENSE-" in msg.text, StateFilter("*"))
 async def start_owner_registration(message: Message, state: FSMContext, command: CommandObject):
     args = command.args
     await state.clear() 
 
-    key_data = await saas_repo.get_license_key(args)
+    # Добавляем strip(), чтобы убрать случайные пробелы
+    clean_key = args.strip()
+    
+    key_data = await saas_repo.get_license_key(clean_key)
     
     if not key_data: 
-        return await message.answer("⛔ Ключ лицензии не найден.")
+        return await message.answer("⛔ <b>Ошибка ключа:</b>\nКлюч не найден в базе.\nВозможно, база была очищена. Сгенерируйте новый ключ через /root_login.")
     
     if key_data['is_used']:
         return await message.answer("⚠️ Эта лицензия уже была активирована.")
@@ -1447,17 +1451,14 @@ async def start_owner_registration(message: Message, state: FSMContext, command:
     current_username = message.from_user.username
     current_id = message.from_user.id
     
-    if key_data['target_tg_id'] and key_data['target_tg_id'] != current_id:
-         return await message.answer("⛔ ОШИБКА: Ссылка заблокирована для другого пользователя.")
-
     if key_data['target_username']:
         clean_target = key_data['target_username'].lstrip('@').lower()
         clean_current = current_username.lower() if current_username else ""
         if clean_target != clean_current:
             return await message.answer(f"⛔ ОШИБКА: Ссылка заблокирована для @{key_data['target_username']}.")
 
-    await state.update_data(key=args)
-    await process_key(message, args, state)
+    await state.update_data(key=clean_key)
+    await process_key(message, clean_key, state)
 
 @router.message(OwnerReg.waiting_key)
 async def key_input(message: Message, state: FSMContext):

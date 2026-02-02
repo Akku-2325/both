@@ -25,7 +25,8 @@ async def toggle_duty(tg_id: int, restaurant_id: int, task_index: int, is_checke
 
     if len(user_duties) != len(master_tasks_list):
         new_duties = []
-        for i, title in enumerate(master_tasks_list):
+        for i, task_data in enumerate(master_tasks_list):
+            title = task_data['text']
             is_done = False
             if i < len(user_duties):
                 if user_duties[i].get('title') == title:
@@ -36,7 +37,7 @@ async def toggle_duty(tg_id: int, restaurant_id: int, task_index: int, is_checke
 
     if 0 <= task_index < len(user_duties):
         user_duties[task_index]['done'] = is_checked
-        user_duties[task_index]['title'] = master_tasks_list[task_index]
+        user_duties[task_index]['title'] = master_tasks_list[task_index]['text']
 
     data['duties'] = user_duties
     new_report = json.dumps(data)
@@ -76,12 +77,13 @@ async def close_shift_logic(tg_id: int, restaurant_id: int, raw_data: str, user_
     user_duties = data.get('duties', [])
     
     if not user_duties:
-        user_duties = [{"title": t, "done": False} for t in tasks_list]
+        user_duties = [{"title": t['text'], "done": False} for t in tasks_list]
 
     missed = []
     completed_count = 0
     
-    for i, title in enumerate(tasks_list):
+    for i, task_data in enumerate(tasks_list):
+        title = task_data['text']
         is_done = False
         if i < len(user_duties):
             is_done = user_duties[i].get('done', False)

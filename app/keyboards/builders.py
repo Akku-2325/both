@@ -51,9 +51,7 @@ def checklist_categories(role_slug):
 
 def checklist_items_edit(items: list, role_slug: str, shift_type: str, mode: str = "view", selected_ids: list = None, page: int = 0):
     if selected_ids is None: selected_ids = []
-    
     ITEMS_PER_PAGE = 8
-    
     builder = InlineKeyboardBuilder()
 
     if mode == "view":
@@ -73,41 +71,26 @@ def checklist_items_edit(items: list, role_slug: str, shift_type: str, mode: str
         for item in page_items:
             icon = "✅" if item['id'] in selected_ids else "⬜"
             short_text = item['text'][:15] + ".." if len(item['text']) > 15 else item['text']
-            
-            builder.button(
-                text=f"{icon} {short_text}", 
-                callback_data=f"toggle_sel:{item['id']}:{role_slug}:{shift_type}"
-            )
-        
+            builder.button(text=f"{icon} {short_text}", callback_data=f"toggle_sel:{item['id']}:{role_slug}:{shift_type}")
         builder.adjust(2)
 
         nav_builder = InlineKeyboardBuilder()
         total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
         
         if total_pages > 1:
-            if page > 0:
-                nav_builder.button(text="⬅️", callback_data=f"cl_page:{page-1}:{role_slug}:{shift_type}")
-            else:
-                nav_builder.button(text="▫️", callback_data="noop")
-            
+            if page > 0: nav_builder.button(text="⬅️", callback_data=f"cl_page:{page-1}:{role_slug}:{shift_type}")
+            else: nav_builder.button(text="▫️", callback_data="noop")
             nav_builder.button(text=f"{page + 1}/{total_pages}", callback_data="noop")
-            
-            if end_index < total_items:
-                nav_builder.button(text="➡️", callback_data=f"cl_page:{page+1}:{role_slug}:{shift_type}")
-            else:
-                nav_builder.button(text="▫️", callback_data="noop")
-                
+            if end_index < total_items: nav_builder.button(text="➡️", callback_data=f"cl_page:{page+1}:{role_slug}:{shift_type}")
+            else: nav_builder.button(text="▫️", callback_data="noop")
             nav_builder.adjust(3)
             builder.attach(nav_builder)
 
         control = InlineKeyboardBuilder()
-        if selected_ids:
-            control.button(text=f"🗑 Удалить ({len(selected_ids)})", callback_data=f"confirm_del:{role_slug}:{shift_type}")
+        if selected_ids: control.button(text=f"🗑 Удалить ({len(selected_ids)})", callback_data=f"confirm_del:{role_slug}:{shift_type}")
         control.button(text="🔙 Отмена", callback_data=f"open_cat:{role_slug}:{shift_type}")
         control.adjust(1)
-        
         builder.attach(control)
-
     return builder.as_markup()
 
 def task_assign_menu(users, current_user_id, active_ids, roles_map):
@@ -156,15 +139,20 @@ def checklist_kb(status_list: list, shift_id: int, tasks_list: list):
     builder = InlineKeyboardBuilder()
     for i, task in enumerate(tasks_list):
         is_done = status_list[i] if i < len(status_list) else False
-        text = f"✅ {task}" if is_done else f"🟥 {task}"
+        
+        icon = "🟥"
+        if is_done: icon = "✅"
+        elif task.get('item_type') == 'photo': icon = "📸"
+        elif task.get('item_type') == 'video': icon = "🎥"
+        
+        text = f"{icon} {task['text']}"
         callback_action = "check_off" if is_done else "check_on"
         builder.button(text=text, callback_data=f"{callback_action}:{i}:{shift_id}")
+
     builder.adjust(1)
-    
     control_builder = InlineKeyboardBuilder()
     control_builder.button(text="📤 Отправить отчет", callback_data=f"submit_checklist:{shift_id}")
     control_builder.button(text="🔽 Скрыть", callback_data="close_checklist")
     control_builder.adjust(1)
-    
     builder.attach(control_builder)
     return builder.as_markup()

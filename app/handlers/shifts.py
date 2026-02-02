@@ -26,7 +26,6 @@ async def cancel_shift_action(message: Message, state: FSMContext, restaurant_id
     else:
         await message.answer("Действие отменено.", reply_markup=reply.menu_shift_closed())
 
-
 @router.message(F.text == "🟢 Начать смену")
 async def start_shift_ask_type(message: Message, state: FSMContext, restaurant_id: int):
     tg_id = message.from_user.id
@@ -85,7 +84,6 @@ async def start_shift_with_video(message: Message, state: FSMContext, restaurant
             await message.bot.send_message(admin_id, f"☀️ <b>СМЕНА ОТКРЫТА ({type_rus})</b>\n👤 {user_info['full_name']} (<b>{r_name}</b>)\n📅 {time_now}")
         except: pass
 
-
 @router.message(F.text == "⚡️ Онлайн Чек-лист")
 async def open_live_checklist(message: Message, restaurant_id: int):
     tg_id = message.from_user.id
@@ -116,25 +114,77 @@ async def open_live_checklist(message: Message, restaurant_id: int):
     )
 
 @router.callback_query(F.data.startswith("check_"))
-async def toggle_task_handler(callback: CallbackQuery, restaurant_id: int):
+async def toggle_task_handler(callback: CallbackQuery, state: FSMContext, restaurant_id: int):
     parts = callback.data.split(":")
-    action, index_str, btn_shift_id = parts[0], parts[1], int(parts[2])
+    action, index, shift_id = parts[0], int(parts[1]), int(parts[2])
+    
     active = await shift_repo.get_active_shift(callback.from_user.id, restaurant_id)
-    if not active or active['id'] != btn_shift_id: return await callback.answer("Смена закрыта!", show_alert=True)
-    
-    tasks_list = await check_repo.get_checklist(restaurant_id, active['role'], active['shift_type'])
-    
-    if int(index_str) >= len(tasks_list):
-        return await callback.answer("Список изменился, откройте заново.")
+    if not active or active['id'] != shift_id: return await callback.answer("Смена закрыта!", show_alert=True)
 
-    status_list = await shift_service.toggle_duty(callback.from_user.id, restaurant_id, int(index_str), (action == "check_on"), tasks_list)
+    tasks_list = await check_repo.get_checklist(restaurant_id, active['role'], active['shift_type'])
+    if index >= len(tasks_list): return await callback.answer("Список изменился.")
+    
+    task = tasks_list[index]
+
+    if action == "check_on" and task.get('item_type') != 'simple':
+        await state.update_data(current_task_index=index, current_shift_id=shift_id)
+        await state.set_state(ShiftState.waiting_item_media)
+        
+        req_text = "фотографию" if task['item_type'] == 'photo' else "видео-кружок или видео"
+        await callback.message.answer(f"📸 <b>Задание: {task['text']}</b>\n\nПожалуйста, отправьте {req_text} для подтверждения.", reply_markup=reply.cancel())
+        await callback.answer()
+        return
+
+    status_list = await shift_service.toggle_duty(
+        callback.from_user.id, restaurant_id, index, (action == "check_on"), tasks_list
+    )
     
     if status_list is not None:
         try: 
             await callback.message.edit_reply_markup(
                 reply_markup=builders.checklist_kb(status_list, active['id'], tasks_list)
             )
-        except: pass 
+        except: pass
+
+@router.message(ShiftState.waiting_item_media, F.photo | F.video | F.video_note)
+async def handle_checklist_media(message: Message, state: FSMContext, restaurant_id: int):
+    data = await state.get_data()
+    index = data.get('current_task_index')
+    shift_id = data.get('current_shift_id')
+    
+    active = await shift_repo.get_active_shift(message.from_user.id, restaurant_id)
+    if not active or active['id'] != shift_id:
+        await state.clear()
+        return await message.answer("Смена закрыта.")
+    
+    tasks_list = await check_repo.get_checklist(restaurant_id, active['role'], active['shift_type'])
+    task = tasks_list[index]
+    
+    user = await user_repo.get_user(message.from_user.id, restaurant_id)
+    
+    admin_msg = f"📸 <b>ОТЧЕТ ПО ЗАДАЧЕ</b>\n👤 {user['full_name']}\n📝 {task['text']}"
+    
+    for admin_id in await user_repo.get_admins_ids(restaurant_id):
+        try:
+            if message.photo: await message.bot.send_photo(admin_id, message.photo[-1].file_id, caption=admin_msg)
+            elif message.video: await message.bot.send_video(admin_id, message.video.file_id, caption=admin_msg)
+            elif message.video_note:
+                await message.bot.send_message(admin_id, admin_msg)
+                await message.bot.send_video_note(admin_id, message.video_note.file_id)
+        except: pass
+
+    status_list = await shift_service.toggle_duty(
+        message.from_user.id, restaurant_id, index, True, tasks_list
+    )
+    
+    await state.clear()
+    await message.answer("✅ Отчет принят!", reply_markup=reply.menu_shift_open(WEB_APP_URL))
+    
+    if status_list:
+        await message.answer(
+            f"⚡️ <b>Чек-лист</b>", 
+            reply_markup=builders.checklist_kb(status_list, active['id'], tasks_list)
+        )
 
 @router.callback_query(F.data.startswith("submit_checklist"))
 async def submit_checklist_ask_comment(callback: CallbackQuery, state: FSMContext, restaurant_id: int):
@@ -175,16 +225,17 @@ async def submit_checklist_process(message: Message, state: FSMContext, restaura
     
     completed_count = 0
     visual = ""
-    for i, task in enumerate(tasks_list):
+    for i, task_data in enumerate(tasks_list):
+        title = task_data['text']
         is_done = False
         if i < len(user_duties):
             is_done = user_duties[i].get('done', False)
         
         if is_done:
-            visual += f"✅ {task}\n"
+            visual += f"✅ {title}\n"
             completed_count += 1
         else:
-            visual += f"🟥 {task}\n"
+            visual += f"🟥 {title}\n"
     
     total = len(tasks_list)
     percent = int((completed_count / total) * 100) if total > 0 else 0

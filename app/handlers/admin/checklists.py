@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 
@@ -117,7 +117,8 @@ async def render_checklist_items(callback: CallbackQuery, restaurant_id: int, ro
             text_lines.append("<i>Список пуст.</i>")
         else:
             for i, it in enumerate(items, 1):
-                text_lines.append(f"<b>{i}.</b> {it['text']}")
+                type_icon = {"simple": "", "photo": "📸 ", "video": "🎥 "}.get(it.get('item_type', 'simple'), "")
+                text_lines.append(f"<b>{i}.</b> {type_icon}{it['text']}")
         text_lines.append("\n✅ <i>Это список задач. Нажмите «Добавить» или «Удалить».</i>")
         text = "\n".join(text_lines)
 
@@ -145,35 +146,48 @@ async def add_item_start(callback: CallbackQuery, state: FSMContext):
     await state.update_data(role=role, shift_type=stype)
     await state.set_state(ChecklistState.waiting_checklist_text)
     
-    data = await state.get_data() 
-    
     await callback.message.delete()
     await callback.message.answer(
-        f"✍️ Введите задачу для этой роли:", 
+        f"✍️ <b>Введите текст новой задачи:</b>", 
         reply_markup=reply.cancel()
     )
 
-@router.message(ChecklistState.waiting_checklist_text)
-async def add_item_finish(message: Message, state: FSMContext, restaurant_id: int):
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("Отменено.", reply_markup=reply.admin_main())
-        return
-
+@router.message(StateFilter(ChecklistState), F.text == "❌ Отмена")
+async def cancel_checklist_action(message: Message, state: FSMContext):
     data = await state.get_data()
-    role = data['role']
-    shift_type = data['shift_type']
-    text = message.text.strip()
+    role = data.get('role')
+    shift_type = data.get('shift_type')
     
-    if await check_repo.is_checklist_item_exists(restaurant_id, role, shift_type, text):
-        await message.answer(f"⛔ <b>Ошибка!</b>\nЗадача «{text}» уже есть.")
-    else:
-        await check_repo.add_checklist_item(restaurant_id, role, shift_type, text)
-        await message.answer(f"✅ Добавлено: <b>{text}</b>")
+    await state.clear()
+    
+    await message.answer("Действие отменено.", reply_markup=reply.admin_main())
 
+@router.message(ChecklistState.waiting_checklist_text)
+async def ask_item_type(message: Message, state: FSMContext):
+    await state.update_data(text=message.text.strip())
+    await state.set_state(ChecklistState.waiting_checklist_type)
+    
     kb = builders.InlineKeyboardBuilder()
-    kb.button(text="🔙 К списку задач", callback_data=f"open_cat:{role}:{shift_type}")
-    kb.button(text="🏠 Закончить редактирование", callback_data="back_to_admin")
+    kb.button(text="📝 Обычное", callback_data="type:simple")
+    kb.button(text="📸 Фото-отчет", callback_data="type:photo")
+    kb.button(text="🎥 Видео-отчет", callback_data="type:video")
     kb.adjust(1)
     
-    await message.answer("👇 Введите следующую задачу ИЛИ нажмите кнопку, чтобы закончить:", reply_markup=kb.as_markup())
+    await message.answer("Какой отчет требуется от сотрудника?", reply_markup=kb.as_markup())
+
+@router.callback_query(ChecklistState.waiting_checklist_type, F.data.startswith("type:"))
+async def save_checklist_item(callback: CallbackQuery, state: FSMContext, restaurant_id: int):
+    item_type = callback.data.split(":")[1]
+    data = await state.get_data()
+    
+    await check_repo.add_checklist_item(restaurant_id, data['role'], data['shift_type'], data['text'], item_type)
+    
+    types_map = {"simple": "Обычное", "photo": "Фото", "video": "Видео"}
+    
+    await callback.message.answer(
+        f"✅ Добавлено: <b>{data['text']}</b> ({types_map.get(item_type)})", 
+        reply_markup=ReplyKeyboardRemove()
+    )
+    
+    await state.clear()
+    await render_checklist_items(callback, restaurant_id, data['role'], data['shift_type'], mode="view")

@@ -99,6 +99,7 @@ async def init_db():
                 role TEXT NOT NULL,
                 shift_type TEXT NOT NULL,
                 text TEXT NOT NULL,
+                item_type TEXT DEFAULT 'simple',
                 FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
             )
         """)
