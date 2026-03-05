@@ -48,6 +48,13 @@ async def toggle_duty(tg_id: int, restaurant_id: int, task_index: int, is_checke
 async def close_shift_logic(tg_id: int, restaurant_id: int, raw_data: str, user_name: str, tasks_list: list, comment: str = None):
     active_shift = await shift_repo.get_active_shift(tg_id, restaurant_id)
     if not active_shift: return None
+    try:
+        data = json.loads(raw_data)
+    except:
+        data = {}
+    if comment:
+        data['end_comment'] = comment 
+    updated_raw_data = json.dumps(data)
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
@@ -62,7 +69,7 @@ async def close_shift_logic(tg_id: int, restaurant_id: int, raw_data: str, user_
         )
         await db.commit()
 
-    await shift_repo.end_shift(active_shift['id'], restaurant_id, raw_data)
+    await shift_repo.end_shift(active_shift['id'], restaurant_id, updated_raw_data)
     
     try:
         data = json.loads(raw_data)

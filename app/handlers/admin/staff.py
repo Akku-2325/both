@@ -3,8 +3,9 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
+from datetime import datetime
 
-from app.database.repo import users as user_repo, tasks as task_repo, roles as role_repo
+from app.database.repo import users as user_repo, tasks as task_repo, roles as role_repo, shifts as shift_repo
 from app.database.repo import saas as saas_repo
 from app.services import kpi as kpi_service
 from app.keyboards import reply, builders
@@ -225,3 +226,45 @@ async def money_reason_handler(message: Message, state: FSMContext, restaurant_i
     except: pass
     
     await state.clear()
+
+@router.callback_query(F.data.startswith("user_history:"))
+async def show_user_history(callback: CallbackQuery, restaurant_id: int):
+    parts = callback.data.split(":")
+    target_id, page = int(parts[1]), int(parts[2])
+    per_page = 5 
+    total_count = await shift_repo.count_user_shifts(target_id, restaurant_id)
+    total_pages = (total_count + per_page - 1) // per_page
+    user = await user_repo.get_user(target_id, restaurant_id)
+    
+    if total_count == 0:
+        return await callback.answer("Нет закрытых смен.", show_alert=True)
+
+    shifts = await shift_repo.get_user_shifts_paginated(target_id, restaurant_id, page, per_page)
+    text = f"📜 <b>История: {user['full_name']}</b>\n\n" 
+    
+    for s in shifts:
+        start = datetime.strptime(s['started_at'], "%Y-%m-%d %H:%M:%S")
+        end = datetime.strptime(s['ended_at'], "%Y-%m-%d %H:%M:%S")
+        try:
+            data = json.loads(s['report'])
+            comment = data.get('end_comment', '—')
+        except: comment = '—'
+        text += f"📅 <b>{start.strftime('%d.%m.%y')}</b>\n🕘 {start.strftime('%H:%M')} - {end.strftime('%H:%M')}\n💬 <i>{comment}</i>\n──────────────────\n"
+
+    await callback.message.edit_text(text, reply_markup=builders.shift_history_kb(page, total_pages, target_id))
+
+@router.callback_query(F.data.startswith("clear_user_history:"))
+async def ask_clear_user_history(callback: CallbackQuery):
+    u_id = int(callback.data.split(":")[1])
+    builder = builders.InlineKeyboardBuilder()
+    builder.button(text="🔥 ДА, УДАЛИТЬ", callback_data=f"final_clear_user:{u_id}")
+    builder.button(text="🔙 Отмена", callback_data=f"user_history:{u_id}:0")
+    builder.adjust(1)
+    await callback.message.edit_text("⚠️ <b>УДАЛИТЬ ИСТОРИЮ СМЕН ЭТОГО СОТРУДНИКА?</b>", reply_markup=builder.as_markup())
+
+@router.callback_query(F.data.startswith("final_clear_user:"))
+async def execute_clear_user_history(callback: CallbackQuery, restaurant_id: int):
+    u_id = int(callback.data.split(":")[1])
+    await shift_repo.clear_user_shifts(u_id, restaurant_id)
+    await callback.answer("Очищено")
+    await callback.message.edit_text("📜 <b>Журнал смен</b>\nВыберите формат просмотра:", reply_markup=builders.journal_type_menu())

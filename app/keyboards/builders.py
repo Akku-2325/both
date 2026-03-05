@@ -1,4 +1,5 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardButton
 
 def staff_list(users, current_user_id, roles_map):
     builder = InlineKeyboardBuilder()
@@ -13,6 +14,7 @@ def staff_list(users, current_user_id, roles_map):
 def employee_actions(user_id, user_name):
     builder = InlineKeyboardBuilder()
     builder.button(text="📊 KPI и Выплата", callback_data=f"kpi:{user_id}")
+    builder.button(text="📜 История смен", callback_data=f"user_history:{user_id}:0") 
     builder.button(text="🔄 Новый период (Сброс)", callback_data=f"reset_stats:{user_id}")
     builder.button(text="💰 Штраф / Премия", callback_data=f"money:{user_id}")
     builder.button(text="❌ Удалить сотрудника", callback_data=f"fire:{user_id}")
@@ -53,7 +55,6 @@ def checklist_items_edit(items: list, role_slug: str, shift_type: str, mode: str
     if selected_ids is None: selected_ids = []
     ITEMS_PER_PAGE = 8
     builder = InlineKeyboardBuilder()
-
     if mode == "view":
         builder.button(text="➕ Добавить задачу", callback_data=f"add_item:{role_slug}:{shift_type}")
         builder.button(text="🗑 Удалить задачи", callback_data=f"mode_del:{role_slug}:{shift_type}")
@@ -61,22 +62,18 @@ def checklist_items_edit(items: list, role_slug: str, shift_type: str, mode: str
         builder.button(text="🏠 Закончить", callback_data="back_to_admin")
         builder.adjust(1)
         return builder.as_markup()
-        
     elif mode == "delete":
         total_items = len(items)
         start_index = page * ITEMS_PER_PAGE
         end_index = start_index + ITEMS_PER_PAGE
         page_items = items[start_index:end_index]
-        
         for item in page_items:
             icon = "✅" if item['id'] in selected_ids else "⬜"
             short_text = item['text'][:15] + ".." if len(item['text']) > 15 else item['text']
             builder.button(text=f"{icon} {short_text}", callback_data=f"toggle_sel:{item['id']}:{role_slug}:{shift_type}")
         builder.adjust(2)
-
         nav_builder = InlineKeyboardBuilder()
         total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-        
         if total_pages > 1:
             if page > 0: nav_builder.button(text="⬅️", callback_data=f"cl_page:{page-1}:{role_slug}:{shift_type}")
             else: nav_builder.button(text="▫️", callback_data="noop")
@@ -85,7 +82,6 @@ def checklist_items_edit(items: list, role_slug: str, shift_type: str, mode: str
             else: nav_builder.button(text="▫️", callback_data="noop")
             nav_builder.adjust(3)
             builder.attach(nav_builder)
-
         control = InlineKeyboardBuilder()
         if selected_ids: control.button(text=f"🗑 Удалить ({len(selected_ids)})", callback_data=f"confirm_del:{role_slug}:{shift_type}")
         control.button(text="🔙 Отмена", callback_data=f"open_cat:{role_slug}:{shift_type}")
@@ -139,20 +135,56 @@ def checklist_kb(status_list: list, shift_id: int, tasks_list: list):
     builder = InlineKeyboardBuilder()
     for i, task in enumerate(tasks_list):
         is_done = status_list[i] if i < len(status_list) else False
-        
         icon = "🟥"
         if is_done: icon = "✅"
         elif task.get('item_type') == 'photo': icon = "📸"
         elif task.get('item_type') == 'video': icon = "🎥"
-        
         text = f"{icon} {task['text']}"
         callback_action = "check_off" if is_done else "check_on"
         builder.button(text=text, callback_data=f"{callback_action}:{i}:{shift_id}")
-
     builder.adjust(1)
     control_builder = InlineKeyboardBuilder()
     control_builder.button(text="📤 Отправить отчет", callback_data=f"submit_checklist:{shift_id}")
     control_builder.button(text="🔽 Скрыть", callback_data="close_checklist")
     control_builder.adjust(1)
     builder.attach(control_builder)
+    return builder.as_markup()
+
+def journal_type_menu():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📖 Смотреть все смены", callback_data="journal_all:0")
+    builder.button(text="👤 Выбрать сотрудника", callback_data="journal_by_user")
+    builder.button(text="🔽 Закрыть", callback_data="close_checklist")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def journal_user_select(users):
+    builder = InlineKeyboardBuilder()
+    for u in users:
+        if not u['is_active']: continue
+        builder.button(text=f"👤 {u['full_name']}", callback_data=f"user_history:{u['tg_id']}:0")
+    builder.button(text="🔙 Назад", callback_data="back_to_journal_type")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def shift_history_kb(current_page: int, total_pages: int, target_user_id: int = None):
+    builder = InlineKeyboardBuilder()
+    
+    prefix = f"user_history:{target_user_id}" if target_user_id else "journal_all"
+    
+    nav_buttons = []
+    if current_page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️", callback_data=f"{prefix}:{current_page - 1}"))
+    nav_buttons.append(InlineKeyboardButton(text=f"{current_page + 1}/{total_pages}", callback_data="noop"))
+    if current_page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="➡️", callback_data=f"{prefix}:{current_page + 1}"))
+    
+    builder.row(*nav_buttons)
+    
+    if target_user_id:
+        builder.row(InlineKeyboardButton(text="🗑 Очистить историю сотрудника", callback_data=f"clear_user_history:{target_user_id}"))
+    else:
+        builder.row(InlineKeyboardButton(text="🗑 Очистить весь журнал", callback_data="confirm_clear_shifts"))
+        
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_journal_type"))
     return builder.as_markup()

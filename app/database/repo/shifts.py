@@ -76,3 +76,49 @@ async def get_monthly_stats(tg_id: int, restaurant_id: int):
             )
         """, (tg_id, restaurant_id, tg_id, restaurant_id)) as cur:
             return [dict(row) for row in await cur.fetchall()]
+
+async def get_shifts_paginated(restaurant_id: int, page: int = 0, per_page: int = 10):
+    offset = page * per_page
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT s.*, u.full_name 
+            FROM shifts s
+            JOIN users u ON s.user_id = u.tg_id AND s.restaurant_id = u.restaurant_id
+            WHERE s.restaurant_id = ? AND s.ended_at IS NOT NULL 
+            ORDER BY s.id DESC LIMIT ? OFFSET ?
+        """, (restaurant_id, per_page, offset)) as cur:
+            return [dict(row) for row in await cur.fetchall()]
+
+async def count_total_shifts(restaurant_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM shifts WHERE restaurant_id = ? AND ended_at IS NOT NULL", (restaurant_id,)) as cur:
+            res = await cur.fetchone()
+            return res[0] if res else 0
+
+async def get_user_shifts_paginated(user_id: int, restaurant_id: int, page: int = 0, per_page: int = 10):
+    offset = page * per_page
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT * FROM shifts 
+            WHERE user_id = ? AND restaurant_id = ? AND ended_at IS NOT NULL 
+            ORDER BY id DESC LIMIT ? OFFSET ?
+        """, (user_id, restaurant_id, per_page, offset)) as cur:
+            return [dict(row) for row in await cur.fetchall()]
+
+async def count_user_shifts(user_id: int, restaurant_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM shifts WHERE user_id = ? AND restaurant_id = ? AND ended_at IS NOT NULL", (user_id, restaurant_id)) as cur:
+            res = await cur.fetchone()
+            return res[0] if res else 0
+
+async def clear_all_restaurant_shifts(restaurant_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM shifts WHERE restaurant_id = ? AND ended_at IS NOT NULL", (restaurant_id,))
+        await db.commit()
+
+async def clear_user_shifts(user_id: int, restaurant_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM shifts WHERE user_id = ? AND restaurant_id = ? AND ended_at IS NOT NULL", (user_id, restaurant_id))
+        await db.commit()

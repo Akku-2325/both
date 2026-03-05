@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
@@ -93,3 +94,48 @@ async def monitor_specific_user(callback: CallbackQuery, restaurant_id: int):
 @router.callback_query(F.data == "close_checklist")
 async def close_check(c: CallbackQuery): 
     await c.message.delete()
+
+@router.message(F.text == "📜 Журнал смен")
+async def cmd_shift_journal_start(message: Message):
+    if await user_repo.get_session_role(message.from_user.id) != "admin": return
+    await message.answer("📜 <b>Журнал смен</b>\nВыберите формат просмотра:", reply_markup=builders.journal_type_menu())
+
+@router.callback_query(F.data == "back_to_journal_type")
+async def back_to_journal_type(callback: CallbackQuery):
+    await callback.message.edit_text("📜 <b>Журнал смен</b>\nВыберите формат просмотра:", reply_markup=builders.journal_type_menu())
+
+@router.callback_query(F.data == "journal_by_user")
+async def journal_user_select_view(callback: CallbackQuery, restaurant_id: int):
+    users = await user_repo.get_all_users(restaurant_id)
+    await callback.message.edit_text("👤 <b>Выберите сотрудника:</b>", reply_markup=builders.journal_user_select(users))
+
+@router.callback_query(F.data.startswith("journal_all:"))
+async def journal_all_pages(callback: CallbackQuery, restaurant_id: int):
+    page = int(callback.data.split(":")[1])
+    per_page = 10
+    total_count = await shift_repo.count_total_shifts(restaurant_id)
+    total_pages = (total_count + per_page - 1) // per_page
+    if total_count == 0: return await callback.answer("История пуста.", show_alert=True)
+    shifts = await shift_repo.get_shifts_paginated(restaurant_id, page, per_page)
+    text = f"📜 <b>Все смены ({total_count}):</b>\n\n"
+    for s in shifts:
+        start = datetime.strptime(s['started_at'], "%Y-%m-%d %H:%M:%S")
+        end = datetime.strptime(s['ended_at'], "%Y-%m-%d %H:%M:%S")
+        diff = end - start
+        duration = f"{int(diff.total_seconds() // 3600)}ч {int((diff.total_seconds() % 3600) // 60)}м"
+        text += f"📅 <b>{start.strftime('%d.%m')}</b> | {s['full_name']}\n🕘 {start.strftime('%H:%M')} - {end.strftime('%H:%M')} ({duration})\n──────────────────\n"
+    await callback.message.edit_text(text, reply_markup=builders.shift_history_kb(page, total_pages))
+
+@router.callback_query(F.data == "confirm_clear_shifts")
+async def ask_clear_history(callback: CallbackQuery):
+    builder = builders.InlineKeyboardBuilder()
+    builder.button(text="🔥 ДА, УДАЛИТЬ ВСЁ", callback_data="clear_history_final")
+    builder.button(text="🔙 Отмена", callback_data="back_to_journal_type")
+    builder.adjust(1)
+    await callback.message.edit_text("⚠️ <b>ВНИМАНИЕ!</b>\nВы хотите удалить ВСЮ историю закрытых смен.", reply_markup=builder.as_markup())
+
+@router.callback_query(F.data == "clear_history_final")
+async def clear_history_execute(callback: CallbackQuery, restaurant_id: int):
+    await shift_repo.clear_all_restaurant_shifts(restaurant_id)
+    await callback.answer("✅ Журнал смен очищен", show_alert=True)
+    await back_to_journal_type(callback)
