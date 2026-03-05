@@ -8,3 +8,4 @@ service_account.json
 *.db-shm
 *.db-wal
 deploy.py
+export_code.py
